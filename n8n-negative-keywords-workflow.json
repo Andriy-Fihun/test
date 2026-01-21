@@ -1,0 +1,212 @@
+{
+  "name": "Rebuild Negatives Diff",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "GA_Negatives",
+          "mode": "name"
+        },
+        "options": {
+          "rangeDefinition": "detectAutomatically"
+        }
+      },
+      "id": "read-ga-negatives",
+      "name": "Read GA_Negatives",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [450, 200],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "MS_Negatives",
+          "mode": "name"
+        },
+        "options": {
+          "rangeDefinition": "detectAutomatically"
+        }
+      },
+      "id": "read-ms-negatives",
+      "name": "Read MS_Negatives",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [450, 400],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Get data from both sheets\nconst gaItems = $input.first().json;\nconst msItems = $input.last().json;\n\n// List names to include from GA\nconst allowedListNames = [\n  'bad tech',\n  'PC, invest, sensitive content, sites, logins, misc',\n  'skill-seekers, deals, errors',\n  'too short',\n  'competitors',\n  'too short - sql perf',\n  'SQL Deployments',\n  'Irrelevant info queries'\n];\n\n// Helper function to format keyword with match type\nfunction formatKeyword(keyword, matchType) {\n  if (matchType === 'EXACT') {\n    return `[${keyword}]`;\n  } else if (matchType === 'PHRASE') {\n    return `\"${keyword}\"`;\n  }\n  // BROAD match (no special formatting)\n  return keyword;\n}\n\n// Helper function to create unique key for comparison\nfunction makeKey(keyword, matchType) {\n  return `${keyword}|||${matchType}`;\n}\n\n// Filter and process GA items\nconst gaFiltered = gaItems.filter(item => \n  allowedListNames.includes(item.list_name)\n);\n\n// Create sets for comparison (keyword + match_type)\nconst gaKeySet = new Set(\n  gaFiltered.map(item => makeKey(item.keyword, item.match_type))\n);\n\nconst msKeySet = new Set(\n  msItems.map(item => makeKey(item.keyword, item.match_type))\n);\n\n// Find keywords to add to MS (in GA but not in MS)\nconst addToMS = [];\nfor (const item of gaFiltered) {\n  const key = makeKey(item.keyword, item.match_type);\n  if (!msKeySet.has(key)) {\n    addToMS.push({\n      keyword: item.keyword,\n      match_type: item.match_type\n    });\n  }\n}\n\n// Find keywords to add to GA (in MS but not in GA)\nconst addToGA = [];\nfor (const item of msItems) {\n  const key = makeKey(item.keyword, item.match_type);\n  if (!gaKeySet.has(key)) {\n    addToGA.push({\n      keyword: item.keyword,\n      match_type: item.match_type\n    });\n  }\n}\n\n// Build output rows\nconst outputRows = [];\nconst maxRows = Math.max(addToGA.length, addToMS.length);\n\nfor (let i = 0; i < maxRows; i++) {\n  const row = {\n    add_to_GA: '',\n    add_to_MS: ''\n  };\n  \n  if (i < addToGA.length) {\n    row.add_to_GA = formatKeyword(addToGA[i].keyword, addToGA[i].match_type);\n  }\n  \n  if (i < addToMS.length) {\n    row.add_to_MS = formatKeyword(addToMS[i].keyword, addToMS[i].match_type);\n  }\n  \n  outputRows.push(row);\n}\n\n// Return the output rows\nreturn outputRows.map(row => ({ json: row }));"
+      },
+      "id": "compare-and-build-diff",
+      "name": "Compare and Build Diff",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "clear",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Negatives_Diff",
+          "mode": "name"
+        }
+      },
+      "id": "clear-negatives-diff",
+      "name": "Clear Negatives_Diff",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [850, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Negatives_Diff",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "add_to_GA": "={{ $json.add_to_GA }}",
+            "add_to_MS": "={{ $json.add_to_MS }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "write-to-negatives-diff",
+      "name": "Write to Negatives_Diff",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [1050, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "",
+          "name": ""
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read GA_Negatives",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read MS_Negatives",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read GA_Negatives": {
+      "main": [
+        [
+          {
+            "node": "Compare and Build Diff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read MS_Negatives": {
+      "main": [
+        [
+          {
+            "node": "Compare and Build Diff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compare and Build Diff": {
+      "main": [
+        [
+          {
+            "node": "Clear Negatives_Diff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear Negatives_Diff": {
+      "main": [
+        [
+          {
+            "node": "Write to Negatives_Diff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-01-21T00:00:00.000Z",
+  "versionId": ""
+}
