@@ -1,1 +1,144 @@
-n8n PPC Negatives Diff
+# n8n PPC Negatives Diff Workflow
+
+## Overview
+This n8n workflow automatically updates the `Negatives_Diff` sheet in your "PPC- Negative Keyword Lists" Google Spreadsheet by comparing negative keywords between Google Ads (GA) and Microsoft Ads (MS) platforms.
+
+## Workflow File
+The workflow is defined in: `ppc-negatives-diff-workflow.json`
+
+## What This Workflow Does
+
+### Data Sources
+1. **GA_Negatives** tab - Auto-updated daily from Google Ads platform
+2. **MS_Negatives** tab - Manually updated
+3. **Negatives_Diff** tab - Auto-updated by this workflow
+
+### Logic
+
+#### Finding Keywords to Add to MS (add_to_MS column)
+- Looks at specific list_names in GA_Negatives:
+  - bad tech
+  - PC, invest, sensitive content, sites, logins, misc
+  - skill-seekers, deals, errors
+  - too short
+  - competitors
+  - too short - sql perf
+  - SQL Deployments
+  - Irrelevant info queries
+- Compares these keywords with MS_Negatives
+- If a keyword is NOT in MS_Negatives, it gets added to the add_to_MS column
+- **Important**: Match types matter - "sql server" (phrase) and [sql server] (exact) are treated as different keywords
+
+#### Finding Keywords to Add to GA (add_to_GA column)
+- Looks at all keywords in MS_Negatives
+- Compares with GA_Negatives
+- If a keyword is NOT in GA_Negatives, it gets added to the add_to_GA column
+
+## Setup Instructions
+
+### 1. Import the Workflow into n8n
+1. Open your n8n instance
+2. Click on "Workflows" in the left sidebar
+3. Click the "Import from File" button
+4. Select the `ppc-negatives-diff-workflow.json` file
+5. The workflow will be imported with all nodes configured
+
+### 2. Configure Google Sheets Credentials
+1. In n8n, go to "Credentials" in the left sidebar
+2. Click "Add Credential"
+3. Select "Google Sheets OAuth2 API"
+4. Follow the authentication flow to connect your Google account
+5. Note the credential ID (you'll need this in the next step)
+
+### 3. Update the Workflow Parameters
+Open the workflow and update the following in each Google Sheets node:
+
+**In all Google Sheets nodes:**
+- Replace `YOUR_SPREADSHEET_ID` with your actual Google Spreadsheet ID
+  - You can find this in the URL: `https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit`
+- Replace `YOUR_GOOGLE_SHEETS_CREDENTIAL_ID` with the credential ID from step 2
+
+**Google Sheets nodes to update:**
+- Read GA_Negatives
+- Read MS_Negatives
+- Clear Negatives_Diff
+- Write to Negatives_Diff
+
+### 4. Configure the Schedule (Optional)
+The workflow is set to run every 24 hours by default. To change this:
+1. Click on the "Schedule Trigger" node
+2. Adjust the interval as needed (e.g., every 12 hours, daily at specific time, etc.)
+
+Alternatively, you can replace the Schedule Trigger with a Manual Trigger if you want to run it on-demand only.
+
+### 5. Activate the Workflow
+1. Click the "Activate" toggle in the top right corner
+2. The workflow will now run automatically based on your schedule
+
+## Testing the Workflow
+
+Before activating, you should test the workflow:
+1. Click "Execute Workflow" button to run it manually
+2. Check each node to see the data flow
+3. Verify the Negatives_Diff sheet is updated correctly
+4. Confirm that the logic matches your expectations
+
+## Workflow Structure
+
+```
+Schedule Trigger (runs every 24 hours)
+    ↓
+    ├→ Read GA_Negatives (reads all data from GA_Negatives tab)
+    |       ↓
+    └→ Read MS_Negatives (reads all data from MS_Negatives tab)
+            ↓
+    Process Differences (JavaScript code to compare and find differences)
+            ↓
+    Clear Negatives_Diff (clears existing data in Negatives_Diff tab)
+            ↓
+    Write to Negatives_Diff (writes new comparison results)
+```
+
+## Output Format
+
+The Negatives_Diff sheet will have two columns:
+
+| add_to_GA | add_to_MS |
+|-----------|-----------|
+| keyword1 (match_type) | keyword2 (match_type) |
+| keyword3 (match_type) | keyword4 (match_type) |
+
+Example:
+| add_to_GA | add_to_MS |
+|-----------|-----------|
+| sql training (phrase) | python tutorial (exact) |
+| database admin (exact) | server management (phrase) |
+
+## Troubleshooting
+
+### Workflow Fails to Read Sheets
+- Check that Google Sheets credentials are properly configured
+- Verify the spreadsheet ID is correct
+- Ensure the sheet tab names match exactly: GA_Negatives, MS_Negatives, Negatives_Diff
+
+### No Data in Output
+- Verify that GA_Negatives and MS_Negatives have data
+- Check that column names match: list_name, keyword, match_type, first_seen_at, last_synced_at, is_new
+- Review the "Process Differences" node output to see intermediate results
+
+### Incorrect Matches
+- Ensure match types are consistent in your data
+- Remember that match types are case-sensitive in the comparison
+- Verify that the list_name values in GA_Negatives exactly match the target list names
+
+## Maintenance
+
+- The workflow will run automatically based on your schedule
+- Monitor execution history in n8n to ensure it's running successfully
+- If you add new list_names to track, update the `targetListNames` array in the "Process Differences" Code node
+
+## Notes
+
+- The workflow clears and rewrites the entire Negatives_Diff sheet each time it runs
+- Make sure GA_Negatives is being updated from Google Ads before this workflow runs
+- The workflow preserves match type distinctions (phrase vs exact vs broad)

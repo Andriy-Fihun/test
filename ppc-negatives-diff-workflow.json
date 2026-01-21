@@ -1,0 +1,224 @@
+{
+  "name": "PPC Negatives Diff Updater",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300],
+      "webhookId": ""
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SPREADSHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "GA_Negatives",
+          "mode": "name"
+        },
+        "options": {
+          "rangeDefinition": "specifyRange",
+          "range": "A:F"
+        }
+      },
+      "id": "read-ga-negatives",
+      "name": "Read GA_Negatives",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [470, 200],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SPREADSHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "MS_Negatives",
+          "mode": "name"
+        },
+        "options": {
+          "rangeDefinition": "specifyRange",
+          "range": "A:F"
+        }
+      },
+      "id": "read-ms-negatives",
+      "name": "Read MS_Negatives",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [470, 400],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get data from both sheets\nconst gaItems = $input.first().json;\nconst msItems = $input.last().json;\n\n// Define the list names to check\nconst targetListNames = [\n  'bad tech',\n  'PC, invest, sensitive content, sites, logins, misc',\n  'skill-seekers, deals, errors',\n  'too short',\n  'competitors',\n  'too short - sql perf',\n  'SQL Deployments',\n  'Irrelevant info queries'\n];\n\n// Helper function to create a unique key for keyword comparison\n// Important: Match type matters - \"sql server\" and [sql server] are different\nfunction createKeywordKey(keyword, matchType) {\n  return `${keyword}|||${matchType}`.toLowerCase();\n}\n\n// Create sets for quick lookup\n// MS_Negatives keywords (all)\nconst msKeywordSet = new Set();\nif (Array.isArray(msItems)) {\n  msItems.forEach(item => {\n    if (item.keyword && item.match_type) {\n      msKeywordSet.add(createKeywordKey(item.keyword, item.match_type));\n    }\n  });\n}\n\n// GA_Negatives keywords (all)\nconst gaKeywordSet = new Set();\nif (Array.isArray(gaItems)) {\n  gaItems.forEach(item => {\n    if (item.keyword && item.match_type) {\n      gaKeywordSet.add(createKeywordKey(item.keyword, item.match_type));\n    }\n  });\n}\n\n// Find keywords to add_to_MS\n// Logic: From GA_Negatives (specific list_names only), find KWs NOT in MS_Negatives\nconst addToMS = [];\nif (Array.isArray(gaItems)) {\n  gaItems.forEach(item => {\n    // Check if this item is from one of the target list names\n    if (item.list_name && targetListNames.includes(item.list_name)) {\n      if (item.keyword && item.match_type) {\n        const key = createKeywordKey(item.keyword, item.match_type);\n        // If NOT in MS_Negatives, add to the list\n        if (!msKeywordSet.has(key)) {\n          addToMS.push({\n            keyword: item.keyword,\n            match_type: item.match_type,\n            list_name: item.list_name\n          });\n        }\n      }\n    }\n  });\n}\n\n// Find keywords to add_to_GA\n// Logic: From MS_Negatives, find KWs NOT in GA_Negatives\nconst addToGA = [];\nif (Array.isArray(msItems)) {\n  msItems.forEach(item => {\n    if (item.keyword && item.match_type) {\n      const key = createKeywordKey(item.keyword, item.match_type);\n      // If NOT in GA_Negatives, add to the list\n      if (!gaKeywordSet.has(key)) {\n        addToGA.push({\n          keyword: item.keyword,\n          match_type: item.match_type,\n          list_name: item.list_name || ''\n        });\n      }\n    }\n  });\n}\n\n// Prepare output for Negatives_Diff sheet\n// We need to create rows with two columns: add_to_GA and add_to_MS\nconst maxRows = Math.max(addToGA.length, addToMS.length);\nconst outputRows = [];\n\nfor (let i = 0; i < maxRows; i++) {\n  const row = {\n    add_to_GA: '',\n    add_to_MS: ''\n  };\n  \n  if (i < addToGA.length) {\n    const item = addToGA[i];\n    row.add_to_GA = `${item.keyword} (${item.match_type})`;\n  }\n  \n  if (i < addToMS.length) {\n    const item = addToMS[i];\n    row.add_to_MS = `${item.keyword} (${item.match_type})`;\n  }\n  \n  outputRows.push(row);\n}\n\n// Return the data\nreturn outputRows.map(row => ({ json: row }));"
+      },
+      "id": "process-differences",
+      "name": "Process Differences",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [690, 300]
+    },
+    {
+      "parameters": {
+        "operation": "clear",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SPREADSHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Negatives_Diff",
+          "mode": "name"
+        }
+      },
+      "id": "clear-negatives-diff",
+      "name": "Clear Negatives_Diff",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [910, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SPREADSHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Negatives_Diff",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "add_to_GA": "={{ $json.add_to_GA }}",
+            "add_to_MS": "={{ $json.add_to_MS }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "write-negatives-diff",
+      "name": "Write to Negatives_Diff",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1130, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read GA_Negatives",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read MS_Negatives",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read GA_Negatives": {
+      "main": [
+        [
+          {
+            "node": "Process Differences",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read MS_Negatives": {
+      "main": [
+        [
+          {
+            "node": "Process Differences",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Differences": {
+      "main": [
+        [
+          {
+            "node": "Clear Negatives_Diff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clear Negatives_Diff": {
+      "main": [
+        [
+          {
+            "node": "Write to Negatives_Diff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2026-01-21T00:00:00.000Z",
+  "versionId": "1"
+}
